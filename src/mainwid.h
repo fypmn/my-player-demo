@@ -24,15 +24,18 @@
 #include "title.h"
 #include "settingwid.h"
 
+// 前向声明，避免循环依赖，命名空间为Ui
 namespace Ui {
 class MainWid;
 }
 
 class MainWid : public QMainWindow
 {
+    // 宏定义，用于生成信号和槽的代码，有了它，你的类才能使用 Qt 的核心机制：信号和槽。否则就是一个普通的 C++ 类。
     Q_OBJECT
 
 public:
+    // 构造函数，explicit 防止隐式转换，parent 是父窗口，0 表示没有父窗口
     explicit MainWid(QMainWindow *parent = 0);
     ~MainWid();
 
@@ -108,6 +111,8 @@ signals:
     void SigPlayOrPause();
     void SigOpenFile(QString strFilename);
 private:
+    
+    // 指向UI界面的指针，用于访问和操作UI组件
     Ui::MainWid *ui;
 
     bool m_bPlaying; ///< 正在播放

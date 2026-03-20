@@ -1,14 +1,4 @@
-﻿/*
- * @file 	mainwid.cpp
- * @date 	2018/03/10 22:26
- *
- * @author 	itisyang
- * @Contact	itisyang@gmail.com
- *
- * @brief 	主窗口
- * @note
- */
-#include <QFile>
+﻿#include <QFile>
 #include <QPainter>
 #include <QtMath>
 #include <QDebug>
@@ -35,6 +25,7 @@ const int FULLSCREEN_MOUSE_DETECT_TIME = 500;
 
 MainWid::MainWid(QMainWindow *parent) :
     QMainWindow(parent),
+    //ui.mainwid.h 中定义的 MainWid 类，用于访问和操作UI组件,和当前这个MainWid类是不同的
     ui(new Ui::MainWid),
     m_nShadowWidth(0),
     m_stMenu(this),

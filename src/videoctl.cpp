@@ -26,6 +26,24 @@ static int64_t audio_callback_time;
 
 #define FF_QUIT_EVENT    (SDL_USEREVENT + 2)
 
+VideoCtl::VideoCtl(QObject *parent) :
+QObject(parent),
+m_bInited(false),
+m_CurStream(nullptr),
+m_bPlayLoop(false),
+screen_width(0),
+screen_height(0),
+startup_volume(30),
+renderer(nullptr),
+window(nullptr),
+m_nFrameW(0),
+m_nFrameH(0)
+{
+    avdevice_register_all();
+    //网络格式初始化
+    avformat_network_init();
+}
+
 int VideoCtl::realloc_texture(SDL_Texture **texture, Uint32 new_format, int new_width, int new_height, SDL_BlendMode blendmode, int init_texture)
 {
     Uint32 format;
@@ -688,6 +706,7 @@ int VideoCtl::audio_thread(void *arg)
         if (got_frame) {
             tb = { 1, frame->sample_rate };
 
+                // sampq 是队列本体，af 是指向队列内部某个槽的临时指针
                 if (!(af = frame_queue_peek_writable(&is->sampq)))
                     goto the_end;
 
@@ -731,8 +750,10 @@ int VideoCtl::video_thread(void *arg)
         if (!ret)
             continue;
 
+        // 计算时间信息
         duration = (frame_rate.num && frame_rate.den ? av_q2d({ frame_rate.den, frame_rate.num }) : 0);
         pts = (frame->pts == AV_NOPTS_VALUE) ? NAN : frame->pts * av_q2d(tb);
+        // 推入渲染队列
         ret = queue_picture(is, frame, pts, duration, frame->pkt_pos, is->viddec.pkt_serial);
         av_frame_unref(frame);
 
@@ -1097,18 +1118,22 @@ int VideoCtl::stream_component_open(VideoState *is, int stream_index)
     int ret = 0;
     int stream_lowres = 0;
 
+    //检查索引越界
     if (stream_index < 0 || stream_index >= ic->nb_streams)
         return -1;
 
+    //先分配空的上下文，不绑定任何解码器
     avctx = avcodec_alloc_context3(NULL);
     if (!avctx)
         return AVERROR(ENOMEM);
 
+    //把流的编码参数从 `codecpar` 复制到 `avctx`
     ret = avcodec_parameters_to_context(avctx, ic->streams[stream_index]->codecpar);
     if (ret < 0)
         goto fail;
     avctx->pkt_timebase = ic->streams[stream_index]->time_base;
 
+    //查找解码器
     codec = avcodec_find_decoder(avctx->codec_id);
 
     switch (avctx->codec_type) {
@@ -1128,6 +1153,7 @@ int VideoCtl::stream_component_open(VideoState *is, int stream_index)
     }
 
     avctx->codec_id = codec->id;
+    //lower上限检查，超过上限打印警告并设置为上限。解码档位
     if (stream_lowres > codec->max_lowres) {
         av_log(avctx, AV_LOG_WARNING, "The maximum value for lowres supported by the decoder is %d\n",
             codec->max_lowres);
@@ -1143,9 +1169,11 @@ int VideoCtl::stream_component_open(VideoState *is, int stream_index)
         av_dict_set(&opts, "threads", "auto", 0);
     if (stream_lowres)
         av_dict_set_int(&opts, "lowres", stream_lowres, 0);
-    if ((ret = avcodec_open2(avctx, codec, &opts)) < 0) {
+    //真正初始化解码器，消费掉能识别的 opts 键值对，不认识的键保留在 opts 里
+        if ((ret = avcodec_open2(avctx, codec, &opts)) < 0) {
         goto fail;
 }
+    //检测无效选项，会存在opts中
     if ((t = av_dict_get(opts, "", NULL, AV_DICT_IGNORE_SUFFIX))) {
         av_log(NULL, AV_LOG_ERROR, "Option %s not found.\n", t->key);
         ret = AVERROR_OPTION_NOT_FOUND;
@@ -1153,7 +1181,9 @@ int VideoCtl::stream_component_open(VideoState *is, int stream_index)
     }
 
     is->eof = 0;
+    //取消流的丢弃标记 AVDISCARD_ALL
     ic->streams[stream_index]->discard = AVDISCARD_DEFAULT;
+
     switch (avctx->codec_type) {
     case AVMEDIA_TYPE_AUDIO:
 #if CONFIG_AVFILTER
@@ -1197,17 +1227,21 @@ int VideoCtl::stream_component_open(VideoState *is, int stream_index)
 
         is->audio_stream = stream_index;
         is->audio_st = ic->streams[stream_index];
-
+        
+        //绑定解码结构体、数据包队列、信号量，初始化pts
         if ((ret = decoder_init(&is->auddec, avctx, &is->audioq, is->continue_read_thread)) < 0)
             goto fail;
+        // 处理无时间戳的格式，需要手动记录流的起始时间和时间基。正常格式：每个packet都有pts时间戳，解码器直接用packet的pts
         if (is->ic->iformat->flags & AVFMT_NOTIMESTAMPS) {
             is->auddec.start_pts = is->audio_st->start_time;
             is->auddec.start_pts_tb = is->audio_st->time_base;
         }
 
         packet_queue_start(is->auddec.queue);
+        //创建线程
         is->auddec.decode_thread = std::thread(&VideoCtl::audio_thread, this, is);
 
+        // 启动SDL音频播放
         SDL_PauseAudioDevice(audio_dev, 0);
         break;
     case AVMEDIA_TYPE_VIDEO:
@@ -1218,6 +1252,7 @@ int VideoCtl::stream_component_open(VideoState *is, int stream_index)
             goto fail;
         packet_queue_start(is->viddec.queue);
         is->viddec.decode_thread = std::thread(&VideoCtl::video_thread, this, is);
+        // 视频流刚初始化完成,立即触发封面图处理
         is->queue_attachments_req = 1;
         break;
     case AVMEDIA_TYPE_SUBTITLE:
@@ -1310,27 +1345,29 @@ void VideoCtl::ReadThread(VideoState *is)
     }
 
     //构建 处理封装格式 结构体
+    //先分配后打开，这是为了能够在打开文件之前就能设置中断回调
     ic = avformat_alloc_context();
     if (!ic) {
         av_log(NULL, AV_LOG_FATAL, "Could not allocate context.\n");
         ret = AVERROR(ENOMEM);
         goto fail;
     }
+
+    //中断回调
     ic->interrupt_callback.callback = decode_interrupt_cb;
     ic->interrupt_callback.opaque = is;
 
     //打开文件，获得封装等信息
-
     err = avformat_open_input(&ic, is->filename, nullptr, nullptr);
     if (err < 0) {
         //print_error(is->filename, err);
         ret = -1;
         goto fail;
     }
-
+    //保存到 VideoState
     is->ic = ic;
 
-
+    // 注入全局附加数据
     av_format_inject_global_side_data(ic);
 
 
@@ -1350,10 +1387,11 @@ void VideoCtl::ReadThread(VideoState *is)
     }
 
     if (ic->pb)
-        ic->pb->eof_reached = 0; // FIXME hack, ffplay maybe should not use avio_feof() to test for the end
+        ic->pb->eof_reached = 0; // FIXME hack, ffplay maybe should not use avio_feof() to test for the end，手动清零
 
     is->max_frame_duration = (ic->iformat->flags & AVFMT_TS_DISCONT) ? 10.0 : 3600.0;
 
+    //判断是否实时流
     is->realtime = is_realtime(ic);
 
 
@@ -1375,8 +1413,7 @@ void VideoCtl::ReadThread(VideoState *is)
         }
     }
 
-    //获得视频、音频、字幕的流索引
-
+    //获得视频、音频、字幕的流索引。 倒数第三个参数是参考哪一个流，比如音频流优先参考视频流
     st_index[AVMEDIA_TYPE_VIDEO] =
         av_find_best_stream(ic, AVMEDIA_TYPE_VIDEO,
             st_index[AVMEDIA_TYPE_VIDEO], -1, NULL, 0);
@@ -1430,8 +1467,10 @@ void VideoCtl::ReadThread(VideoState *is)
 
     //读取视频数据
     for (;;) {
+        //中断请求检测，是否要退出
         if (is->abort_request)
             break;
+        //暂停状态变化检测，差分检测，节省资源
         if (is->paused != is->last_paused) {
             is->last_paused = is->paused;
             if (is->paused)
@@ -1440,11 +1479,12 @@ void VideoCtl::ReadThread(VideoState *is)
                 av_read_play(ic);
         }
 
+        //拖动进度条相关逻辑
         if (is->seek_req) {
             int64_t seek_target = is->seek_pos;
             int64_t seek_min = is->seek_rel > 0 ? seek_target - is->seek_rel + 2 : INT64_MIN;
             int64_t seek_max = is->seek_rel < 0 ? seek_target - is->seek_rel - 2 : INT64_MAX;
-            // FIXME the +-2 is due to rounding being not done in the correct direction in generation
+            // FIXME the +-2 is due to rounding being not done in the correct direction in generation  +-2为了修正舍入误差
             //      of the seek_pos/seek_rel variables
 
             ret = avformat_seek_file(is->ic, -1, seek_min, seek_target, seek_max, is->seek_flags);
@@ -1452,6 +1492,7 @@ void VideoCtl::ReadThread(VideoState *is)
                 av_log(NULL, AV_LOG_ERROR,
                     "%s: error while seeking\n", is->ic->url);
             }
+            //seek 后必须清空队列，防止继续播放原有的数据
             else {
                 if (is->audio_stream >= 0)
                     packet_queue_flush(&is->audioq);
@@ -1459,6 +1500,7 @@ void VideoCtl::ReadThread(VideoState *is)
                     packet_queue_flush(&is->subtitleq);
                 if (is->video_stream >= 0)
                     packet_queue_flush(&is->videoq);
+                // 重置外部时钟
                 if (is->seek_flags & AVSEEK_FLAG_BYTE) {
                     set_clock(&is->extclk, NAN, 0);
                 }
@@ -1466,14 +1508,17 @@ void VideoCtl::ReadThread(VideoState *is)
                     set_clock(&is->extclk, seek_target / (double)AV_TIME_BASE, 0);
                 }
             }
+            //清理标志位
             is->seek_req = 0;
             is->queue_attachments_req = 1;
             is->eof = 0;
+            // 暂停状态下推进一帧
             if (is->paused)
                 step_to_next_frame(is);
         }
+        //触发重新投递封面图
         if (is->queue_attachments_req) {
-            if (is->video_st && is->video_st->disposition & AV_DISPOSITION_ATTACHED_PIC) {
+            if (is->video_st && (is->video_st->disposition & AV_DISPOSITION_ATTACHED_PIC)) {
                 if ((ret = av_packet_ref(pkt, &is->video_st->attached_pic)) < 0)
                     goto fail;
                 packet_queue_put(&is->videoq, pkt);
@@ -1483,15 +1528,16 @@ void VideoCtl::ReadThread(VideoState *is)
         }
 
         /* if the queue are full, no need to read more */
+        // 当为非实时流，总队列大小 > MAX_QUEUE_SIZE、三条流都有足够的包这两个条件满足一个就休眠
         if (infinite_buffer < 1 &&
             (is->audioq.size + is->videoq.size + is->subtitleq.size > MAX_QUEUE_SIZE
                 || (stream_has_enough_packets(is->audio_st, is->audio_stream, &is->audioq) &&
                     stream_has_enough_packets(is->video_st, is->video_stream, &is->videoq) &&
                     stream_has_enough_packets(is->subtitle_st, is->subtitle_stream, &is->subtitleq)))) {
             /* wait 10 ms */
-            SDL_LockMutex(wait_mutex);
-            SDL_CondWaitTimeout(is->continue_read_thread, wait_mutex, 10);
-            SDL_UnlockMutex(wait_mutex);
+            SDL_LockMutex(wait_mutex);  //加锁
+            SDL_CondWaitTimeout(is->continue_read_thread, wait_mutex, 10);  //等待
+            SDL_UnlockMutex(wait_mutex);  //解锁
             continue;
         }
         if (!is->paused &&
@@ -1505,8 +1551,10 @@ void VideoCtl::ReadThread(VideoState *is)
         //按帧读取
         ret = av_read_frame(ic, pkt);
         if (ret < 0) {
+            //文件读完了
             if ((ret == AVERROR_EOF || avio_feof(ic->pb)) && !is->eof) {
                 if (is->video_stream >= 0)
+                //null packet 就是告诉解码器"数据已经全部送完了，把缓存里剩余的帧都吐出来"
                     packet_queue_put_nullpacket(&is->videoq, pkt, is->video_stream);
                 if (is->audio_stream >= 0)
                     packet_queue_put_nullpacket(&is->audioq, pkt, is->audio_stream);
@@ -1514,6 +1562,7 @@ void VideoCtl::ReadThread(VideoState *is)
                     packet_queue_put_nullpacket(&is->subtitleq, pkt, is->subtitle_stream);
                 is->eof = 1;
             }
+            //出现错误了
             if (ic->pb && ic->pb->error)
                 break;
             SDL_LockMutex(wait_mutex);
@@ -1999,24 +2048,6 @@ void VideoCtl::OnPause()
 void VideoCtl::OnStop()
 {
     m_bPlayLoop = false;
-}
-
-VideoCtl::VideoCtl(QObject *parent) :
-QObject(parent),
-m_bInited(false),
-m_CurStream(nullptr),
-m_bPlayLoop(false),
-screen_width(0),
-screen_height(0),
-startup_volume(30),
-renderer(nullptr),
-window(nullptr),
-m_nFrameW(0),
-m_nFrameH(0)
-{
-    avdevice_register_all();
-    //网络格式初始化
-    avformat_network_init();
 }
 
 bool VideoCtl::Init()

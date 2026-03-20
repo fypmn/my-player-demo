@@ -3,6 +3,7 @@
 #include <QSlider>
 #include <QMouseEvent>
 
+//自定义进度条控件
 class CustomSlider : public QSlider
 {
     Q_OBJECT
