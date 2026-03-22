@@ -234,7 +234,14 @@ void VideoCtl::stream_component_close(VideoState *is, int stream_index)
     switch (codecpar->codec_type) {
     case AVMEDIA_TYPE_AUDIO:
         decoder_abort(&is->auddec, &is->sampq);
-        SDL_CloseAudio();
+    // decoder_abort 内部会 join 音频解码线程
+    // 解码线程结束后音频回调自然拿不到新数据
+    // 此时再关闭设备，不会和回调产生锁竞争
+        if (audio_dev)
+        {
+            SDL_CloseAudioDevice(audio_dev);
+            audio_dev = 0;
+        }
         decoder_destroy(&is->auddec);
         swr_free(&is->swr_ctx);
         av_freep(&is->audio_buf1);
@@ -281,11 +288,9 @@ void VideoCtl::stream_component_close(VideoState *is, int stream_index)
 //关闭流
 void VideoCtl::stream_close(VideoState *is)
 {
-    /* XXX: use a special url_shutdown call to abort parse cleanly */
     is->abort_request = 1;
     is->read_tid.join();
 
-    /* close each stream */
     if (is->audio_stream >= 0)
         stream_component_close(is, is->audio_stream);
     if (is->video_stream >= 0)
@@ -299,7 +304,6 @@ void VideoCtl::stream_close(VideoState *is)
     packet_queue_destroy(&is->audioq);
     packet_queue_destroy(&is->subtitleq);
 
-    /* free all pictures */
     frame_queue_destory(&is->pictq);
     frame_queue_destory(&is->sampq);
     frame_queue_destory(&is->subpq);
@@ -1012,7 +1016,7 @@ void sdl_audio_callback(void *opaque, Uint8 *stream, int len)
         else {
             memset(stream, 0, len1);
             if (is->audio_buf)
-                SDL_MixAudio(stream, (uint8_t *)is->audio_buf + is->audio_buf_index, len1, is->audio_volume);
+                SDL_MixAudioFormat(stream, (uint8_t *)is->audio_buf + is->audio_buf_index, AUDIO_S16SYS, len1, is->audio_volume);
         }
         len -= len1;
         stream += len1;
@@ -1816,7 +1820,7 @@ void VideoCtl::LoopThread(VideoState *cur_stream)
         switch (event.type) {
         case SDL_KEYDOWN:
             switch (event.key.keysym.sym) {
-            case SDLK_s: // S: Step to next frame
+            case SDLK_s:
                 step_to_next_frame(cur_stream);
                 break;
             case SDLK_a:
@@ -1833,13 +1837,11 @@ void VideoCtl::LoopThread(VideoState *cur_stream)
             case SDLK_t:
                 stream_cycle_channel(cur_stream, AVMEDIA_TYPE_SUBTITLE);
                 break;
-
             default:
                 break;
             }
             break;
         case SDL_WINDOWEVENT:
-            //窗口大小改变事件
             switch (event.window.event) {
             case SDL_WINDOWEVENT_RESIZED:
                 screen_width = cur_stream->width = event.window.data1;
@@ -1850,17 +1852,14 @@ void VideoCtl::LoopThread(VideoState *cur_stream)
             break;
         case SDL_QUIT:
         case FF_QUIT_EVENT:
-            do_exit(cur_stream);
-            break;
+            m_bPlayLoop = false;  // 加这一行，防止循环继续
+            break;                // 不在这里调用 do_exit，交给循环外统一处理
         default:
             break;
         }
     }
 
-
-    do_exit(m_CurStream);
-    //m_CurStream = nullptr;
-
+    do_exit(m_CurStream);  // 统一在这里调用一次，用成员变量
 }
 
 
@@ -2105,32 +2104,46 @@ VideoCtl::~VideoCtl()
 
 bool VideoCtl::StartPlay(QString strFileName, WId widPlayWid)
 {
+    // 通知 LoopThread 退出
     m_bPlayLoop = false;
+
+    // 推送 SDL_QUIT 事件，唤醒可能阻塞在 SDL_PeepEvents 的 LoopThread
+    if (m_CurStream != nullptr)
+    {
+        SDL_Event event;
+        event.type = SDL_QUIT;
+        SDL_PushEvent(&event);
+    }
+
+    // 现在再 join，LoopThread 收到事件后会很快退出
     if (m_tPlayLoopThread.joinable())
     {
         m_tPlayLoopThread.join();
     }
-    emit SigStartPlay(strFileName);//正式播放，发送给标题栏
 
+    // LoopThread 末尾的 do_exit 已经处理了 m_CurStream
+    // 这里只需确认一下
+    if (m_CurStream != nullptr)
+    {
+        stream_close(m_CurStream);
+        m_CurStream = nullptr;
+    }
+
+    emit SigStartPlay(strFileName);
     play_wid = widPlayWid;
-
-    VideoState *is;
 
     char file_name[1024];
     memset(file_name, 0, 1024);
-    sprintf(file_name, "%s", /*strFileName.toLocal8Bit().data()*/strFileName.toStdString().c_str());
-    //打开流
-    is = stream_open(file_name);
+    sprintf(file_name, "%s", strFileName.toStdString().c_str());
+
+    VideoState *is = stream_open(file_name);
     if (!is) {
         av_log(NULL, AV_LOG_FATAL, "Failed to initialize VideoState!\n");
-        do_exit(m_CurStream);
+        return false;
     }
 
     m_CurStream = is;
-
-    //事件循环
     m_tPlayLoopThread = std::thread(&VideoCtl::LoopThread, this, is);
-
 
     return true;
 }
