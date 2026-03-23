@@ -53,8 +53,6 @@ Show::Show(QWidget *parent) :
     m_stActionGroup.addAction("停止");
 
     m_stMenu.addActions(m_stActionGroup.actions());
-
-    
 }
 
 Show::~Show()
@@ -132,8 +130,8 @@ void Show::dragEnterEvent(QDragEnterEvent *event)
 void Show::resizeEvent(QResizeEvent *event)
 {
     Q_UNUSED(event);
-
     ChangeShow();
+    emit SigResized(ui->label->winId());
 }
 
 void Show::keyReleaseEvent(QKeyEvent *event)

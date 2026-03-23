@@ -123,6 +123,24 @@ bool Playlist::GetPlaylistStatus()
 
 void Playlist::OnAddFile(QString strFileName)
 {
+    // 网络流直接添加，不做格式过滤
+    bool bIsNetworkStream = strFileName.startsWith("rtsp://", Qt::CaseInsensitive) ||
+        strFileName.startsWith("rtmp://", Qt::CaseInsensitive) ||
+        strFileName.startsWith("http://", Qt::CaseInsensitive) ||
+        strFileName.startsWith("https://", Qt::CaseInsensitive) ||
+        strFileName.startsWith("udp://", Qt::CaseInsensitive) ||
+        strFileName.startsWith("rtp://", Qt::CaseInsensitive);
+
+    if (bIsNetworkStream)
+    {
+        QListWidgetItem *pItem = new QListWidgetItem(ui->List);
+        pItem->setData(Qt::UserRole, QVariant(strFileName));
+        pItem->setText(strFileName);
+        pItem->setToolTip(strFileName);
+        ui->List->addItem(pItem);
+        return;
+    }
+
     bool bSupportMovie = strFileName.endsWith(".mkv", Qt::CaseInsensitive) ||
         strFileName.endsWith(".rmvb", Qt::CaseInsensitive) ||
         strFileName.endsWith(".mp4", Qt::CaseInsensitive) ||
@@ -155,6 +173,29 @@ void Playlist::OnAddFile(QString strFileName)
 
 void Playlist::OnAddFileAndPlay(QString strFileName)
 {
+
+    qDebug() << "OnAddFileAndPlay called:" << strFileName;
+
+    // 网络流直接播放，不做格式过滤
+    bool bIsNetworkStream = strFileName.startsWith("rtsp://", Qt::CaseInsensitive) ||
+        strFileName.startsWith("rtmp://", Qt::CaseInsensitive) ||
+        strFileName.startsWith("http://", Qt::CaseInsensitive) ||
+        strFileName.startsWith("https://", Qt::CaseInsensitive) ||
+        strFileName.startsWith("udp://", Qt::CaseInsensitive) ||
+        strFileName.startsWith("rtp://", Qt::CaseInsensitive);
+
+    if (bIsNetworkStream)
+    {
+        // 直接添加到列表并播放，不做格式检查
+        QListWidgetItem *pItem = new QListWidgetItem(ui->List);
+        pItem->setData(Qt::UserRole, QVariant(strFileName));
+        pItem->setText(strFileName);
+        pItem->setToolTip(strFileName);
+        ui->List->addItem(pItem);
+        on_List_itemDoubleClicked(pItem);
+        return;
+    }
+
     bool bSupportMovie = strFileName.endsWith(".mkv", Qt::CaseInsensitive) ||
         strFileName.endsWith(".rmvb", Qt::CaseInsensitive) ||
         strFileName.endsWith(".mp4", Qt::CaseInsensitive) ||

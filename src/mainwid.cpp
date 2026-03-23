@@ -14,6 +14,7 @@
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QJsonParseError>
+#include <QInputDialog>
 
 
 #include "mainwid.h"
@@ -141,6 +142,7 @@ bool MainWid::Init()
     map_act_["OnFullScreenPlay"]  = &MainWid::OnFullScreenPlay;
     map_act_["OnShowAbout"]       = &MainWid::OnShowAbout;
     map_act_["OnShowSettingWid"]  = &MainWid::OnShowSettingWid;
+    map_act_["OpenUrl"] = &MainWid::OpenUrl;
     
     InitMenu();
 
@@ -225,7 +227,7 @@ bool MainWid::ConnectSignalSlots()
 
     connect(&m_stActFullscreen, &QAction::triggered, this, &MainWid::OnFullScreenPlay);
     
-
+    connect(ui->ShowWid, &Show::SigResized, VideoCtl::GetInstance(), &VideoCtl::OnWindowResized);
 
 	return true;
 }
@@ -317,7 +319,6 @@ void MainWid::OnFullScreenPlay()
         ui->ShowWid->windowHandle()->setScreen(pStCurScreen);
         
         ui->ShowWid->showFullScreen();
-
 
         QRect stScreenRect = pStCurScreen->geometry();
         int nCtrlBarHeight = ui->CtrlBarWid->height();
@@ -564,4 +565,14 @@ void MainWid::OnShowOrHidePlaylist()
      {
          ui->PlaylistWid->hide();
      }
+}
+
+void MainWid::OpenUrl()
+{
+    bool ok;
+    QString url = QInputDialog::getText(this, "打开链接",
+        "请输入视频链接（rtsp/rtmp/http）：",
+        QLineEdit::Normal, "rtsp://", &ok);
+    if (ok && !url.isEmpty())
+        emit SigOpenFile(url);
 }

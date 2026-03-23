@@ -1,14 +1,4 @@
-﻿/*
- * @file 	videoctl.h
- * @date 	2018/01/07 10:48
- *
- * @author 	itisyang
- * @Contact	itisyang@gmail.com
- *
- * @brief 	视频控制类
- * @note
- */
-#ifndef VIDEOCTL_H
+﻿#ifndef VIDEOCTL_H
 #define VIDEOCTL_H
 
 #include <QObject>
@@ -69,6 +59,7 @@ public:
     void OnSubVolume();
     void OnPause();
     void OnStop();
+    void OnWindowResized(WId newWid);
 
 private:
     explicit VideoCtl(QObject *parent = nullptr);

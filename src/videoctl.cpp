@@ -1364,9 +1364,15 @@ void VideoCtl::ReadThread(VideoState *is)
     //打开文件，获得封装等信息
     err = avformat_open_input(&ic, is->filename, nullptr, nullptr);
     if (err < 0) {
-        //print_error(is->filename, err);
+        char errbuf[128];
+        av_strerror(err, errbuf, sizeof(errbuf));
+        qDebug() << "avformat_open_input failed:" << errbuf;
         ret = -1;
         goto fail;
+    }
+    else
+    {
+        qDebug() << "avformat_open_input success:" << is->filename;
     }
     //保存到 VideoState
     is->ic = ic;
@@ -1619,6 +1625,9 @@ fail:
 
 VideoState* VideoCtl::stream_open(const char *filename)
 {
+
+    qDebug() << "stream_open called:" << filename; 
+
     VideoState *is;
     //构造视频状态类
     is = (VideoState *)av_mallocz(sizeof(VideoState));
@@ -1862,6 +1871,46 @@ void VideoCtl::LoopThread(VideoState *cur_stream)
     do_exit(m_CurStream);  // 统一在这里调用一次，用成员变量
 }
 
+void VideoCtl::OnWindowResized(WId newWid)
+{
+    play_wid = newWid;
+    qDebug() << "OnWindowResized newWid:" << newWid;
+
+    if (renderer)
+    {
+        SDL_DestroyRenderer(renderer);
+        renderer = nullptr;
+    }
+    if (window)
+    {
+        window = nullptr;
+    }
+
+    if (m_CurStream)
+    {
+        window = SDL_CreateWindowFrom((void*)play_wid);
+        if (window)
+        {
+            int w, h;
+            SDL_GetWindowSize(window, &w, &h);
+            qDebug() << "SDL window size:" << w << h;  // 看这里的尺寸
+            m_CurStream->width = w;
+            m_CurStream->height = h;
+
+            renderer = SDL_CreateRenderer(window, -1,
+                SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+            if (!renderer)
+                renderer = SDL_CreateRenderer(window, -1, 0);
+            
+            qDebug() << "renderer:" << renderer;  // 看renderer是否创建成功
+        }
+        else
+        {
+            qDebug() << "SDL_CreateWindowFrom failed:" << SDL_GetError();
+        }
+        m_CurStream->force_refresh = 1;
+    }
+}
 
 void VideoCtl::OnPlaySeek(double dPercent)
 {
@@ -2104,6 +2153,9 @@ VideoCtl::~VideoCtl()
 
 bool VideoCtl::StartPlay(QString strFileName, WId widPlayWid)
 {
+
+    qDebug() << "StartPlay called:" << strFileName;
+
     // 通知 LoopThread 退出
     m_bPlayLoop = false;
 

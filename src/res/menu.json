@@ -3,5 +3,6 @@
     "全屏": "OnFullScreenPlay/Enter",
     "关于": "OnShowAbout/F1",
     "选项": "OnShowSettingWid/F5",
+    "打开链接...":"OpenUrl/Ctrl+U",
     "退出": "OnCloseBtnClicked/Alt+F4"
 }

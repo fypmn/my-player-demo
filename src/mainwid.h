@@ -101,6 +101,8 @@ private:
     QMenu* AddMenuFun(QString menu_title, QMenu* menu);
     void AddActionFun(QString action_title, QMenu* menu, void(MainWid::* slot_addr)());
 
+    void OpenUrl();
+
 signals:
     //最大化信号
     void SigShowMax(bool bIfMax);

@@ -127,6 +127,8 @@ signals:
     void SigSeekBack();
     void SigAddVolume();
     void SigSubVolume();
+
+    void SigResized(WId winId);
 private:
     Ui::Show *ui;
 
