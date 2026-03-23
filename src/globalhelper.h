@@ -76,6 +76,10 @@ extern "C"{
 #include "libswresample/swresample.h"
 
 #include "SDL2/SDL.h"
+
+#include "libavfilter/buffersink.h"
+#include "libavfilter/buffersrc.h"
+
 }
 
 

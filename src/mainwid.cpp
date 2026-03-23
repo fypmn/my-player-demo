@@ -143,6 +143,7 @@ bool MainWid::Init()
     map_act_["OnShowAbout"]       = &MainWid::OnShowAbout;
     map_act_["OnShowSettingWid"]  = &MainWid::OnShowSettingWid;
     map_act_["OpenUrl"] = &MainWid::OpenUrl;
+    map_act_["OnSetCustomSpeed"] = &MainWid::OnSetCustomSpeed;
     
     InitMenu();
 
@@ -575,4 +576,21 @@ void MainWid::OpenUrl()
         QLineEdit::Normal, "rtsp://", &ok);
     if (ok && !url.isEmpty())
         emit SigOpenFile(url);
+}
+
+void MainWid::OnSetCustomSpeed()
+{
+    bool ok;
+    // 弹出浮点数输入框：标题, 提示词, 默认值, 最小值, 最大值, 小数点位数
+    double speed = QInputDialog::getDouble(this, 
+                                      tr("设置播放速度"),
+                                      tr("速度 (0.1 - 2.0):"), // 修改提示文字
+                                      1.0,  // 默认值
+                                      0.5,  // 最小值 (建议不要设为0，0倍速会导致滤镜报错或卡死)
+                                      2.0,  // 最大值
+                                      2,    // 小数点后保留位数
+                                      &ok);
+    if (ok) {
+        VideoCtl::GetInstance()->OnSetPlaySpeed(speed);
+    }
 }

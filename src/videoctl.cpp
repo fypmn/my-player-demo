@@ -1,16 +1,4 @@
-﻿/*
- * @file 	videoctl.cpp
- * @date 	2018/01/21 12:15
- *
- * @author 	itisyang
- * @Contact	itisyang@gmail.com
- *
- * @brief 	视频控制类
- * @note
- */
-
-
-#include <QDebug>
+﻿#include <QDebug>
 #include <QMutex>
 
 #include <thread>
@@ -37,7 +25,11 @@ startup_volume(30),
 renderer(nullptr),
 window(nullptr),
 m_nFrameW(0),
-m_nFrameH(0)
+m_nFrameH(0),
+m_pFilterGraph(nullptr),
+m_pSrcCtx(nullptr),
+m_pSinkCtx(nullptr),
+m_dPlaySpeed(1.0)
 {
     avdevice_register_all();
     //网络格式初始化
@@ -247,6 +239,9 @@ void VideoCtl::stream_component_close(VideoState *is, int stream_index)
         av_freep(&is->audio_buf1);
         is->audio_buf1_size = 0;
         is->audio_buf = NULL;
+
+         // 在这里加销毁滤镜
+        destroy_audio_filter();
 
         if (is->rdft) {
             av_rdft_end(is->rdft);
@@ -982,6 +977,45 @@ int VideoCtl::audio_decode_frame(VideoState *is)
         last_clock = is->audio_clock;
     }
 #endif
+    // 如果速度不是1.0，走滤镜处理
+if (m_dPlaySpeed != 1.0 && m_pSrcCtx && m_pSinkCtx)
+{
+    AVFrame *filter_frame = av_frame_alloc();
+    filter_frame->sample_rate    = is->audio_tgt.freq;
+    filter_frame->format         = is->audio_tgt.fmt;
+    av_channel_layout_copy(&filter_frame->ch_layout, &is->audio_tgt.ch_layout);
+    filter_frame->nb_samples     = resampled_data_size /
+        (is->audio_tgt.ch_layout.nb_channels *
+         av_get_bytes_per_sample(is->audio_tgt.fmt));
+
+    if (av_frame_get_buffer(filter_frame, 0) >= 0)
+    {
+        memcpy(filter_frame->data[0], is->audio_buf, resampled_data_size);
+
+        if (av_buffersrc_add_frame(m_pSrcCtx, filter_frame) >= 0)
+        {
+            AVFrame *out_frame = av_frame_alloc();
+            if (av_buffersink_get_frame(m_pSinkCtx, out_frame) >= 0)
+            {
+                int out_size = av_samples_get_buffer_size(nullptr,
+                    out_frame->ch_layout.nb_channels,
+                    out_frame->nb_samples,
+                    (AVSampleFormat)out_frame->format, 1);
+
+                av_fast_malloc(&is->audio_buf1, &is->audio_buf1_size, out_size);
+                if (is->audio_buf1)
+                {
+                    memcpy(is->audio_buf1, out_frame->data[0], out_size);
+                    is->audio_buf = is->audio_buf1;
+                    resampled_data_size = out_size;
+                }
+            }
+            av_frame_free(&out_frame);
+        }
+    }
+    av_frame_free(&filter_frame);
+}
+
     return resampled_data_size;
 }
 
@@ -1247,6 +1281,7 @@ int VideoCtl::stream_component_open(VideoState *is, int stream_index)
 
         // 启动SDL音频播放
         SDL_PauseAudioDevice(audio_dev, 0);
+        init_audio_filter(is);
         break;
     case AVMEDIA_TYPE_VIDEO:
         is->video_stream = stream_index;
@@ -2198,4 +2233,119 @@ bool VideoCtl::StartPlay(QString strFileName, WId widPlayWid)
     m_tPlayLoopThread = std::thread(&VideoCtl::LoopThread, this, is);
 
     return true;
+}
+
+int VideoCtl::init_audio_filter(VideoState *is)
+{
+    destroy_audio_filter();
+
+    char args[512];
+    int ret = 0;
+
+    const AVFilter *abuffersrc  = avfilter_get_by_name("abuffer");
+    const AVFilter *abuffersink = avfilter_get_by_name("abuffersink");
+
+    m_pFilterGraph = avfilter_graph_alloc();
+    if (!m_pFilterGraph)
+        return AVERROR(ENOMEM);
+
+    // 构建 abuffer 参数
+    snprintf(args, sizeof(args),
+        "sample_rate=%d:sample_fmt=%s:channel_layout=0x%" PRIx64,
+        is->audio_tgt.freq,
+        av_get_sample_fmt_name(is->audio_tgt.fmt),
+        is->audio_tgt.ch_layout.u.mask);
+
+    // 创建 abuffer 源
+    ret = avfilter_graph_create_filter(&m_pSrcCtx, abuffersrc,
+        "in", args, nullptr, m_pFilterGraph);
+    if (ret < 0)
+    {
+        qDebug() << "avfilter_graph_create_filter abuffer failed";
+        return ret;
+    }
+
+    // 创建 abuffersink
+    ret = avfilter_graph_create_filter(&m_pSinkCtx, abuffersink,
+        "out", nullptr, nullptr, m_pFilterGraph);
+    if (ret < 0)
+    {
+        qDebug() << "avfilter_graph_create_filter abuffersink failed";
+        return ret;
+    }
+
+    // 构建 atempo 滤镜字符串，速度超出0.5-2.0范围时串联多个
+    QString filter_str;
+    double speed = m_dPlaySpeed;
+    if (speed < 0.5)
+    {
+        filter_str = QString("atempo=0.5,atempo=%1").arg(speed / 0.5);
+    }
+    else if (speed > 2.0)
+    {
+        filter_str = QString("atempo=2.0,atempo=%1").arg(speed / 2.0);
+    }
+    else
+    {
+        filter_str = QString("atempo=%1").arg(speed);
+    }
+
+    // 解析滤镜链
+    AVFilterInOut *outputs = avfilter_inout_alloc();
+    AVFilterInOut *inputs  = avfilter_inout_alloc();
+
+    outputs->name       = av_strdup("in");
+    outputs->filter_ctx = m_pSrcCtx;
+    outputs->pad_idx    = 0;
+    outputs->next       = nullptr;
+
+    inputs->name        = av_strdup("out");
+    inputs->filter_ctx  = m_pSinkCtx;
+    inputs->pad_idx     = 0;
+    inputs->next        = nullptr;
+
+    ret = avfilter_graph_parse_ptr(m_pFilterGraph,
+        filter_str.toStdString().c_str(), &inputs, &outputs, nullptr);
+    avfilter_inout_free(&inputs);
+    avfilter_inout_free(&outputs);
+
+    if (ret < 0)
+    {
+        qDebug() << "avfilter_graph_parse_ptr failed";
+        return ret;
+    }
+
+    ret = avfilter_graph_config(m_pFilterGraph, nullptr);
+    if (ret < 0)
+    {
+        qDebug() << "avfilter_graph_config failed";
+        return ret;
+    }
+
+    qDebug() << "init_audio_filter success, speed:" << m_dPlaySpeed;
+    return 0;
+}
+
+void VideoCtl::destroy_audio_filter()
+{
+    if (m_pFilterGraph)
+    {
+        avfilter_graph_free(&m_pFilterGraph);
+        m_pFilterGraph = nullptr;
+        m_pSrcCtx  = nullptr;
+        m_pSinkCtx = nullptr;
+    }
+}
+
+void VideoCtl::OnSetPlaySpeed(double dSpeed)
+{
+    m_dPlaySpeed = dSpeed;
+
+    // 同步调整视频时钟速度
+    if (m_CurStream)
+    {
+        set_clock_speed(&m_CurStream->extclk, dSpeed);
+        // 重建音频滤镜
+        init_audio_filter(m_CurStream);
+    }
 }

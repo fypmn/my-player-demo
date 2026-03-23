@@ -60,6 +60,7 @@ public:
     void OnPause();
     void OnStop();
     void OnWindowResized(WId newWid);
+    void OnSetPlaySpeed(double dSpeed);  // 设置播放速度
 
 private:
     explicit VideoCtl(QObject *parent = nullptr);
@@ -128,6 +129,11 @@ private:
     double compute_target_delay(double delay, VideoState *is);
     double vp_duration(VideoState *is, Frame *vp, Frame *nextvp);
     void update_video_pts(VideoState *is, double pts, int64_t pos, int serial);
+    
+    // 初始化音频滤镜
+    int init_audio_filter(VideoState *is);
+    // 销毁音频滤镜
+    void destroy_audio_filter();
 public:
 
 
@@ -157,6 +163,12 @@ private:
 
     int m_nFrameW;
     int m_nFrameH;
+
+    // 音频滤镜相关
+    AVFilterGraph   *m_pFilterGraph;
+    AVFilterContext *m_pSrcCtx;
+    AVFilterContext *m_pSinkCtx;
+    double          m_dPlaySpeed;  // 播放速度 0.5-2.0
 };
 
 #endif // VIDEOCTL_H

@@ -91,6 +91,7 @@ private:
     void OnShowMenu();
     void OnShowAbout();
     void OpenFile();
+    void OnSetCustomSpeed();
 
     void OnShowSettingWid();
 

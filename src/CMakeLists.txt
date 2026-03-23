@@ -27,6 +27,7 @@ target_include_directories(
           ${AVCODEC_INCLUDE_DIRS}
           ${AVFORMAT_INCLUDE_DIRS}
           ${AVUTIL_INCLUDE_DIRS}
+          ${AVFILTER_INCLUDE_DIRS}
           ${SWRESAMPLE_INCLUDE_DIRS}
           ${SWSCALE_INCLUDE_DIRS}
           ${AVDEVICE_INCLUDE_DIRS}
@@ -37,6 +38,7 @@ target_link_libraries(
   ${TARGET_NAME}
   Qt5::Widgets
   avcodec
+  avfilter
   avformat
   avutil
   swscale
