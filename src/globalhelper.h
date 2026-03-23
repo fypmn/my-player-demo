@@ -1,14 +1,4 @@
-﻿/*
- * @file 	globalhelper.h
- * @date 	2018/01/07 10:41
- *
- * @author 	itisyang
- * @Contact	itisyang@gmail.com
- *
- * @brief 	公共接口
- * @note
- */
-#ifndef GLOBALHELPER_H
+﻿#ifndef GLOBALHELPER_H
 #define GLOBALHELPER_H
 
 #pragma execution_character_set("utf-8")

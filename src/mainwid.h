@@ -63,7 +63,7 @@ protected:
     void mouseReleaseEvent(QMouseEvent *event);
     void mouseMoveEvent(QMouseEvent *event);
 
-    void contextMenuEvent(QContextMenuEvent* event);
+    // void contextMenuEvent(QContextMenuEvent* event);
 
 
 private:

@@ -136,7 +136,12 @@ bool MainWid::Init()
     //AddActionFun(tr("关于"), &m_stMenu, &MainWid::OnShowAbout);
     //AddActionFun(tr("退出"), &m_stMenu, &MainWid::OnCloseBtnClicked);
 
-
+    map_act_["OpenFile"]          = &MainWid::OpenFile;
+    map_act_["OnCloseBtnClicked"] = &MainWid::OnCloseBtnClicked;
+    map_act_["OnFullScreenPlay"]  = &MainWid::OnFullScreenPlay;
+    map_act_["OnShowAbout"]       = &MainWid::OnShowAbout;
+    map_act_["OnShowSettingWid"]  = &MainWid::OnShowSettingWid;
+    
     InitMenu();
 
 
@@ -294,10 +299,10 @@ void MainWid::mouseMoveEvent(QMouseEvent *event)
     QWidget::mouseMoveEvent(event);
 }
 
-void MainWid::contextMenuEvent(QContextMenuEvent* event)
-{
-    m_stMenu.exec(event->globalPos());
-}
+// void MainWid::contextMenuEvent(QContextMenuEvent* event)
+// {
+//     m_stMenu.exec(event->globalPos());
+// }
 
 void MainWid::OnFullScreenPlay()
 {
@@ -417,6 +422,7 @@ void MainWid::OnCtrlBarHideTimeOut()
 
 void MainWid::OnShowMenu()
 {
+    qDebug() << "OnShowMenu called";
     m_stMenu.exec(cursor().pos());
 }
 
@@ -429,7 +435,7 @@ void MainWid::OnShowAbout()
 void MainWid::OpenFile()
 {
     QString strFileName = QFileDialog::getOpenFileName(this, "打开文件", QDir::homePath(),
-        "视频文件(*.mkv *.rmvb *.mp4 *.avi *.flv *.wmv *.3gp)");
+        "视频文件(*.mkv *.rmvb *.mp4 *.MP4 *.avi *.flv *.wmv *.3gp)");
 
     emit SigOpenFile(strFileName);
 }
@@ -489,6 +495,16 @@ void MainWid::MenuJsonParser(QJsonObject& json_obj, QMenu* menu)
 
                 //TODO: 字符串与函数指针对应，连接信号
                 QString fun_str = value_info[0];
+
+                if (map_act_.contains(fun_str))
+                {
+                    connect(action, &QAction::triggered, this, map_act_[fun_str]);
+                }
+                else
+                {
+                    qDebug() << "未找到对应函数：" << fun_str;
+                    action->setEnabled(false);
+                }
 
 
             }
