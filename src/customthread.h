@@ -1,16 +1,4 @@
-﻿/*
- * @file 	customthread.h
- * @date 	2018/01/07 10:13
- *
- * @author 	itisyang
- * @Contact	itisyang@gmail.com
- *
- * @brief 	自定义线程抽象类
- * @note
- */
-
-
-#ifndef CUSTOMTHREAD_H
+﻿#ifndef CUSTOMTHREAD_H
 #define CUSTOMTHREAD_H
 
 #include <QThread>

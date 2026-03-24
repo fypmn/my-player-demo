@@ -1,14 +1,4 @@
-﻿/*
- * @file 	displaywid.h
- * @date 	2018/01/07 11:11
- *
- * @author 	itisyang
- * @Contact	itisyang@gmail.com
- *
- * @brief 	显示控件
- * @note
- */
-#ifndef DISPLAY_H
+﻿#ifndef DISPLAY_H
 #define DISPLAY_H
 
 #include <QWidget>

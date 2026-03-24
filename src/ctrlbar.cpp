@@ -1,14 +1,4 @@
-﻿/*
- * @file 	ctrlbar.cpp
- * @date 	2018/03/10 22:27
- *
- * @author 	itisyang
- * @Contact	itisyang@gmail.com
- *
- * @brief 	控制界面
- * @note
- */
-#include <QDebug>
+﻿#include <QDebug>
 #include <QTime>
 #include <QSettings>
  

@@ -1,14 +1,4 @@
-﻿/*
- * @file 	ctrlbar.h
- * @date 	2018/01/07 10:46
- *
- * @author 	itisyang
- * @Contact	itisyang@gmail.com
- *
- * @brief 	控制面板界面
- * @note
- */
-#ifndef CTRLBAR_H
+﻿#ifndef CTRLBAR_H
 #define CTRLBAR_H
 
 #include <QWidget>

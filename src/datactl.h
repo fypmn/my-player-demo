@@ -1,16 +1,3 @@
-/*
-* @file 	datactrl.h
-* @date 	2018/03/25 22:13
-*
-* @author 	itisyang
-* @Contact	itisyang@gmail.com
-*
-* @brief 	数据处理控制
-* @note
-*/
-
-
-
 #pragma once
 
 #ifdef _windows_

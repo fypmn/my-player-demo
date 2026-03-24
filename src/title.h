@@ -1,14 +1,4 @@
-﻿/*
- * @file 	title.h
- * @date 	2018/01/07 11:13
- *
- * @author 	itisyang
- * @Contact	itisyang@gmail.com
- *
- * @brief 	播放器标题栏
- * @note
- */
-#ifndef MAINWIDTITLE_H
+﻿#ifndef MAINWIDTITLE_H
 #define MAINWIDTITLE_H
 
 #include <QWidget>

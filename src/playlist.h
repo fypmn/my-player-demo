@@ -1,14 +1,4 @@
-﻿/*
- * @file 	playlist.h
- * @date 	2018/01/07 11:12
- *
- * @author 	itisyang
- * @Contact	itisyang@gmail.com
- *
- * @brief 	播放列表控件
- * @note
- */
-#ifndef PLAYLIST_H
+﻿#ifndef PLAYLIST_H
 #define PLAYLIST_H
 
 #include <QWidget>
